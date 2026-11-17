@@ -54,7 +54,7 @@ export function ArrivalRow({ arrival, first, index = 0, following = false, onPre
         </View>
         <View style={styles.when}>
           {plain && arrival.minutes != null && arrival.minutes > 0 && <Dot color={signal.live} size="sm" />}
-          <Minutes value={arrival.minutes} />
+          <Minutes value={arrival.minutes} live={arrival.basis !== "scheduled"} />
         </View>
       </PressableScale>
     </Animated.View>

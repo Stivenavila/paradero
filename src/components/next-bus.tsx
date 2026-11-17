@@ -47,7 +47,7 @@ export function NextBus({ arrival, following = false, onPress }: { arrival: Arri
           </Text>
           <Pace arrival={arrival} />
         </View>
-        <Minutes value={arrival.minutes} size="lg" />
+        <Minutes value={arrival.minutes} size="lg" live={arrival.basis !== "scheduled"} />
       </View>
     </PressableScale>
   );
