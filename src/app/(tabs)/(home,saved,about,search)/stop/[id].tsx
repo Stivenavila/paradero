@@ -68,6 +68,9 @@ export default function StopScreen() {
 
   const codes = useMemo(() => [...new Set((data?.arrivals ?? []).map((a) => a.code))], [data]);
   // Once the last bus of the chosen route has passed, the filter lets go: otherwise the stop reads "no buses" with the chips hidden and no way back.
+  // It lets go for good, so a later bus of that route does not narrow the list again without a tap. Adjusting state while rendering is
+  // React's own pattern for this: the screen re-renders once, before anything is shown.
+  if (only && data && !codes.includes(only)) setOnly(null);
   const active = only && codes.includes(only) ? only : null;
   const arrivals = (data?.arrivals ?? []).filter((a) => !active || a.code === active);
   const [next, ...later] = arrivals;
@@ -185,7 +188,7 @@ export default function StopScreen() {
               </ScrollView>
             )}
 
-            {next ? <NextBus arrival={next} following={!!focus && followed === next} onPress={() => follow(next)} /> : <Empty title={t.stop.none.title} body={t.stop.none.body} />}
+            {next ? <NextBus arrival={next} following={!!focus && followed === next} feedLive={data.feed.live} onPress={() => follow(next)} /> : <Empty title={t.stop.none.title} body={t.stop.none.body} />}
 
             {/* Each live arrival already says so; the notice is for when times fall back to the timetable. */}
             {!data.feed.live && <FeedStatus feed={data.feed} />}
@@ -197,7 +200,7 @@ export default function StopScreen() {
                   {t.stop.later}
                 </Text>
                 {withKeys(later.slice(0, 10)).map(({ a, key }, i) => (
-                  <ArrivalRow key={key} arrival={a} first={i === 0} index={i} following={!!focus && followed === a} onPress={() => follow(a)} />
+                  <ArrivalRow key={key} arrival={a} first={i === 0} index={i} following={!!focus && followed === a} feedLive={data.feed.live} onPress={() => follow(a)} />
                 ))}
               </View>
             )}
