@@ -90,7 +90,8 @@ export async function fileReport(input: ReportInput): Promise<ReportResult> {
   const token = process.env.GITHUB_REPORTS_TOKEN;
   if (!token) throw new CromaError("reports_unavailable", "Reports are not configured.", 503);
 
-  const first = inline(input.message.split(/\r\n|\r|\n/)[0]).slice(0, 70);
+  // The whole message is scrubbed before its first line is taken: a number split across two lines would otherwise leave its first half in the title.
+  const first = inline(scrub(input.message).split(/\r\n|\r|\n/)[0]).slice(0, 70);
   const where = inline(input.context?.routeCode ?? input.context?.stopName ?? "");
   const res = await fetch(`https://api.github.com/repos/${REPO}/issues`, {
     method: "POST",
