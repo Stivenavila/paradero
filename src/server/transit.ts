@@ -152,6 +152,10 @@ async function incomingTo(stop: Stop, routeIds: string[]): Promise<IncomingBus[]
 
 type RouteHours = Pick<RouteDetail["route"], "firstDeparture" | "lastDeparture" | "tripsPerWeek">;
 const NO_HOURS: RouteHours = { firstDeparture: null, lastDeparture: null, tripsPerWeek: null };
+const HOURS_RETRY_MS = MINUTE;
+const hoursFailedAt = new Map<string, number>();
+/** When each route's vehicles last answered, as the feed stamped it. A failed request reports this time, never the current one. */
+const vehiclesAsOf = new Map<string, string>();
 
 /**
  * First and last bus, kept apart from the route itself. When this answer is slow the screen opens without it, but only this once:
@@ -159,8 +163,16 @@ const NO_HOURS: RouteHours = { firstDeparture: null, lastDeparture: null, tripsP
  */
 function hoursOf(routeId: string, query: string): Promise<RouteHours> {
   if (!query) return Promise.resolve(NO_HOURS);
+  // An open route asks again every few seconds. After a failed lookup the hours stay blank for a minute instead of asking Croma each time.
+  const failedAt = hoursFailedAt.get(routeId);
+  if (failedAt !== undefined && Date.now() - failedAt < HOURS_RETRY_MS) return Promise.resolve(NO_HOURS);
   const load = hoursCache(routeId, async () => {
-    const found = await croma("routes-search", { query, per_page: 10 }, s.routesSearch);
+    const found = await croma("routes-search", { query, per_page: 10 }, s.routesSearch).catch((error: unknown) => {
+      hoursFailedAt.set(routeId, Date.now());
+      if (hoursFailedAt.size > 2_000) hoursFailedAt.delete(hoursFailedAt.keys().next().value as string);
+      throw error;
+    });
+    hoursFailedAt.delete(routeId);
     const own = found.routes.find((x) => x.route_id === routeId);
     return {
       firstDeparture: own?.first_departure?.slice(0, 5) ?? null,
@@ -208,6 +220,8 @@ function busesOn(code: string) {
         reportedAt: v.reported_at ?? null,
       })),
     );
+    vehiclesAsOf.set(code, first.as_of);
+    if (vehiclesAsOf.size > 2_000) vehiclesAsOf.delete(vehiclesAsOf.keys().next().value as string);
     return { feed: { asOf: first.as_of, live: isLive(first.as_of, first.live) }, buses };
   });
 }
@@ -220,10 +234,13 @@ export async function routeDetail(routeId: string): Promise<RouteDetail | null> 
 
   const code = route.feedCode;
   const [{ feed, buses }, alerts, hours] = await Promise.all([
-    // The line, its stops and its hours are still worth showing when the vehicles are not: the screen then says there is no live data.
+    // The line, its stops and its hours are still worth showing when the vehicles are not: the screen then says there is no live data
+    // since the last time they did answer. With no such time on this instance, the request fails as before rather than invent one.
     busesOn(code).catch((error: unknown): { feed: Feed; buses: Bus[] } => {
+      const asOf = vehiclesAsOf.get(code);
+      if (!asOf) throw error;
       console.error("[route]", code, "vehicles unavailable", error instanceof Error ? error.message : error);
-      return { feed: { asOf: new Date().toISOString(), live: false }, buses: [] };
+      return { feed: { asOf, live: false }, buses: [] };
     }),
     alertsFor({ route: code }),
     hoursOf(routeId, hoursQuery),
